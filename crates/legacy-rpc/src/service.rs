@@ -409,7 +409,19 @@ where
             debug!(target:"xlayer_legacy_rpc", "Route to local (local-error = {err}) for method = {method}");
         }
     }
-    service.inner.call(req).await
+
+    let res = service.inner.call(req.clone()).await;
+    // For debug_traceTransaction: if local trace returns null or error (e.g. gasless zero-fee
+    // predecessor replay rejection under base-fee validation, #277), fallback to legacy.
+    if method == "debug_traceTransaction" && (res.is_error() || (res.is_success() && is_result_empty(&res))) {
+        debug!(
+            target: "xlayer_legacy_rpc",
+            "Local {method} returned empty/error; falling back to legacy for gasless replay (#277)"
+        );
+        service.forward_to_legacy(req).await
+    } else {
+        res
+    }
 }
 
 /// Routing for `debug_traceBlockByHash`.
